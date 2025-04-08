@@ -44,6 +44,11 @@ EyeExpression currentExpression = HAPPY;
 unsigned long lastExpressionChange = 0;
 int expressionDuration = 5000; // Change expression every 5 seconds
 
+float sleepBubblePhase = 0.0f;
+float bubbleLifecycles[3] = {0.0f, 2.1f, 4.2f}; // Start at different phases
+bool bubbleActive[3] = {true, true, true};
+const float MAX_LIFECYCLE = 6.28f;
+
 void setup() {
   u8g2.begin();
   u8g2.setDrawColor(1); // White
@@ -160,11 +165,14 @@ void loop() {
       case SLEEPY: 
         drawSleepyEyes();
         break;
-      case SLEEPING: 
+      case SLEEPING:
+        updateSleepBubblePhase();  
         drawSleepingEyes();
         break;
     }
   }
+
+
   u8g2.sendBuffer();
 
   delay(30); // small delay to smooth out updates
@@ -440,6 +448,129 @@ void drawSleepyEyes() {
   }
 }
 
+void drawSleepBubble(int centerX, int centerY) {
+  // Parameters for bubble sequence - REDUCED SIZE
+  const int numBubbles = 3;
+  int baseBubbleSizes[numBubbles] = {2, 3, 5}; // Smaller bubbles
+  // Reposition bubbles more to the side and higher
+  int xOffsets[numBubbles] = {2, 8, 16};
+  int yOffsets[numBubbles] = {-2, -5, -10}; // Higher position
+  
+  // Draw Z character (smaller and repositioned)
+  int zX = centerX + xOffsets[2] + 4;
+  int zY = centerY + yOffsets[2] - 4;
+  
+  // Apply subtle movement to Z
+  float zOffset = sin(sleepBubblePhase * 0.5) * 0.8;
+  zY += zOffset;
+  
+  // Draw top horizontal of Z (smaller)
+  for (int i = 0; i < 4; i++) {
+    u8g2.drawPixel(zX + i, zY);
+  }
+  
+  // Draw diagonal of Z (smaller)
+  for (int i = 0; i < 4; i++) {
+    u8g2.drawPixel(zX + 3 - i, zY + i);
+  }
+  
+  // Draw bottom horizontal of Z (smaller)
+  for (int i = 0; i < 4; i++) {
+    u8g2.drawPixel(zX + i, zY + 3);
+  }
+  
+  // Draw bubbles with appearance/disappearance cycle
+  for (int b = 0; b < numBubbles; b++) {
+    // Calculate lifecycle phase for this bubble (0.0 - 6.28)
+    updateBubbleLifecycle(b);
+    
+    // Only draw bubble if it's active
+    if (bubbleActive[b]) {
+      // Calculate size based on lifecycle
+      // Start small -> grow -> stay -> shrink -> disappear
+      float lifeCycleProgress = bubbleLifecycles[b] / MAX_LIFECYCLE;
+      
+      // Size curve: start at 0, peak at 50%, end at 0
+      float sizeMultiplier;
+      if (lifeCycleProgress < 0.2f) {
+        // Growing phase (0% - 20% of lifecycle)
+        sizeMultiplier = lifeCycleProgress * 5.0f;
+      } else if (lifeCycleProgress > 0.8f) {
+        // Shrinking phase (80% - 100% of lifecycle)
+        sizeMultiplier = (1.0f - lifeCycleProgress) * 5.0f;
+      } else {
+        // Stable phase with slight breathing (20% - 80% of lifecycle)
+        sizeMultiplier = 1.0f + sin((lifeCycleProgress - 0.2f) * 10.0f) * 0.1f;
+      }
+      
+      // Calculate final radius with size curve applied
+      int radius = baseBubbleSizes[b] * sizeMultiplier;
+      
+      // Skip drawing if bubble is too small
+      if (radius < 1) continue;
+      
+      // Calculate position with vertical movement
+      int bubbleX = centerX + xOffsets[b];
+      // Add rising effect (bubbles rise more as they age)
+      int bubbleY = centerY + yOffsets[b] - (lifeCycleProgress * 2.5f);
+      
+      // Draw bubble with anti-aliasing
+      for (int x = -radius-1; x <= radius+1; x++) {
+        for (int y = -radius-1; y <= radius+1; y++) {
+          float distance = sqrt(x*x + y*y);
+          
+          if (distance <= radius) {
+            u8g2.drawPixel(bubbleX + x, bubbleY + y);
+          }
+          // Anti-aliasing for edges
+          else if (distance <= radius + 1.0f && distance > radius) {
+            // Only draw some pixels for anti-aliasing effect
+            if ((x + y) % 2 == 0) {
+              u8g2.drawPixel(bubbleX + x, bubbleY + y);
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+// Update individual bubble lifecycle
+void updateBubbleLifecycle(int bubbleIndex) {
+  // Progress the lifecycle
+  bubbleLifecycles[bubbleIndex] += 0.1f;
+  
+  // Reset lifecycle when complete
+  if (bubbleLifecycles[bubbleIndex] >= MAX_LIFECYCLE) {
+    bubbleLifecycles[bubbleIndex] = 0.0f;
+    
+    // Random chance to activate/deactivate bubble
+    bubbleActive[bubbleIndex] = (random(100) < 80); // 80% chance of being active
+  }
+}
+
+void updateSleepBubblePhase() {
+  // Update main phase counter (for Z movement)
+  sleepBubblePhase += 0.05f;
+  if (sleepBubblePhase >= TWO_PI) {
+    sleepBubblePhase -= TWO_PI;
+  }
+  
+  // Make sure at least one bubble is always active
+  bool anyActive = false;
+  for (int i = 0; i < 3; i++) {
+    if (bubbleActive[i]) {
+      anyActive = true;
+      break;
+    }
+  }
+  
+  // Force one random bubble to be active if none are
+  if (!anyActive) {
+    bubbleActive[random(3)] = true;
+  }
+}
+
 void drawSleepingEyes() {
   // Eye parameters
   const int leftEyeX = 35 + eyeOffsetX;
@@ -477,67 +608,21 @@ void drawSleepingEyes() {
     }
   }
 
-  // Draw slightly open relaxed mouth
+  // Add subtle breathing movement to the mouth
+  float mouthOffset = sin(sleepBubblePhase) * 0.5;
+  int adjustedMouthY = mouthY + mouthOffset;
+  
+  // Draw slightly open relaxed mouth with subtle movement
   for (int x = -5; x <= 5; x++) { 
-    u8g2.drawPixel(64 + x + mouthOffsetX, mouthY);
+    u8g2.drawPixel(64 + x + mouthOffsetX, adjustedMouthY);
   }
   
-  // Draw sleep bubble near nose
-  drawSleepBubble(64 + 12, eyeY + 15); // Positioned to right of nose
+  // Draw sleep bubble near nose (animated with disappearing/reappearing effect)
+  // Moved bubble higher and more to the right to avoid covering eyes
+  drawSleepBubble(68, eyeY + 10); // Repositioned to better avoid covering eyes
 }
 
-// Function to draw a sleep bubble
-void drawSleepBubble(int centerX, int centerY) {
-  // Parameters for bubble sequence (3 bubbles of increasing size)
-  const int numBubbles = 3;
-  int bubbleSizes[numBubbles] = {3, 5, 8};
-  int xOffsets[numBubbles] = {0, 6, 14};
-  int yOffsets[numBubbles] = {0, -3, -8};
-  
-  // Draw bubbles (smallest to largest)
-  for (int b = 0; b < numBubbles; b++) {
-    int radius = bubbleSizes[b];
-    int bubbleX = centerX + xOffsets[b];
-    int bubbleY = centerY + yOffsets[b];
-    
-    // Draw circle with anti-aliasing
-    for (int x = -radius-1; x <= radius+1; x++) {
-      for (int y = -radius-1; y <= radius+1; y++) {
-        float distance = sqrt(x*x + y*y);
-        
-        if (distance <= radius) {
-          u8g2.drawPixel(bubbleX + x, bubbleY + y);
-        }
-        // Anti-aliasing for edges
-        else if (distance <= radius + 1.0f && distance > radius) {
-          // Only draw some pixels for anti-aliasing effect
-          if ((x + y) % 2 == 0) {
-            u8g2.drawPixel(bubbleX + x, bubbleY + y);
-          }
-        }
-      }
-    }
-  }
 
-  // Add a small "Z" character near the largest bubble
-  int zX = centerX + xOffsets[2] + 5; 
-  int zY = centerY + yOffsets[2] - 5;
-  
-  // Draw top horizontal of Z
-  for (int i = 0; i < 5; i++) {
-    u8g2.drawPixel(zX + i, zY);
-  }
-  
-  // Draw diagonal of Z
-  for (int i = 0; i < 5; i++) {
-    u8g2.drawPixel(zX + 4 - i, zY + i);
-  }
-  
-  // Draw bottom horizontal of Z
-  for (int i = 0; i < 5; i++) {
-    u8g2.drawPixel(zX + i, zY + 4);
-  }
-}
 
 void drawWinkEyes() {
   // Improved eye parameters with more spacing
