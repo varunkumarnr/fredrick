@@ -139,7 +139,7 @@ void loop() {
 
   u8g2.clearBuffer();
   
-  if (isBlinking) {
+  if (isBlinking && currentExpression != SLEEPING) {
     drawBlinkingEyes();
   } else {
     // Draw the current expression
@@ -573,12 +573,12 @@ void updateSleepBubblePhase() {
 
 void drawSleepingEyes() {
   // Eye parameters
-  const int leftEyeX = 35 + eyeOffsetX;
-  const int rightEyeX = 93 + eyeOffsetX;
-  const int eyeY = 24 + eyeOffsetY;
+  const int leftEyeX = 35 ;
+  const int rightEyeX = 93 ;
+  const int eyeY = 24 ;
   const int eyeWidth = 14;
   const int eyeHeight = 4; // Much flatter for closed eyes
-  const int mouthY = 54 + mouthOffsetY;
+  const int mouthY = 54 ;
   
   // Draw left closed eye (horizontal line with slight curve)
   for (int x = -eyeWidth/2; x <= eyeWidth/2; x++) {
